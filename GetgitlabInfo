@@ -1,0 +1,93 @@
+import gitlab
+import xlsxwriter
+
+url = ''  # GitLab 地址
+private_token = ''  # GitLab Access Tokens（管理员权限）
+
+info = []
+
+
+# GitLab 数据查询
+def gitlab_info(start_time, end_time):
+    global info
+    gl = gitlab.Gitlab(url, private_token)  # 登录，获取GitLab操作对象gl
+    projects = gl.projects.list(all=True)  # 先把所有的项目查出来
+    for project in projects:  # 遍历每一个项目
+        branches = project.branches.list()  # 把每个项目下面的所有分支查出来
+        for branch in branches:  # 然后再遍历每一个分支
+            commits = project.commits.list(all=True, query_parameters={'since': start_time, 'until': end_time,
+                                                                       'ref_name': branch.name})  # 根据时间、分支名遍历该分支下面所有的提交记录
+            for commit in commits:  # 然后再遍历每个提交记录，查询每个提交记录的人和量
+                com = project.commits.get(commit.id)
+                print(com)
+                temp = {'name': com.author_name, 'additions': com.stats['additions'],
+                        'deletions': com.stats['deletions'],
+                        'total': com.stats['total']}  # Git工具用户名,新增代码数,删除代码数,总计代码数
+                info.append(temp)
+
+
+# 输出格式化
+def str_format(txt):
+    lenTxt = len(txt)
+    lenTxt_utf8 = len(txt.encode('utf-8'))
+    size = int((lenTxt_utf8 - lenTxt) / 2 + lenTxt)
+    length = 20 - size
+    return length
+
+#
+if __name__ == "__main__":
+
+    print(url)
+    gitlab_info('2020-10-01T00:00:00Z', '2020-10-31T00:00:00Z')  # 起-止时间
+
+    name = []  # Git工具用户名
+    additions = []  # 新增代码数
+    deletions = []  # 删除代码数
+    total = []  # 总计代码数
+    res = {}
+
+    # 生成元组
+    for i in info:
+        for key, value in i.items():
+            if key == "name":
+                name.append(value)
+            if key == "additions":
+                additions.append(value)
+            if key == "deletions":
+                deletions.append(value)
+            if key == "total":
+                total.append(value)
+    data = list(zip(name, additions, deletions, total))
+    # print(data)
+    # 去重累加
+    for j in data:
+        name = j[0]
+        additions = j[1]
+        deletions = j[2]
+        total = j[3]
+        if name in res.keys():
+            res[name][0] += additions
+            res[name][1] += deletions
+            res[name][2] += total
+        else:
+            res.update({name: [additions, deletions, total]})
+
+    workbook = xlsxwriter.Workbook('file/gitlabCodeNum05.xlsx')  # 建立文件
+    worksheet = workbook.add_worksheet()  # 建立sheet
+    worksheet.write('A1', 'Git用户名')
+    worksheet.write('B1', '新增代码数')
+    worksheet.write('C1', '删除代码数')
+    worksheet.write('D1', '总计代码数')
+    # 打印结果
+    print("Git用户名           新增代码数           删除代码数            总计代码数")
+    q = 1
+    for k in res.keys():
+        print(k + " " * str_format(k) + str(res[k][0]) + " " * str_format(str(res[k][0])) + str(
+            res[k][1]) + " " * str_format(str(res[k][1])) + str(res[k][2]))
+        worksheet.write(q, 0, k)
+        worksheet.write(q, 1, res[k][0])
+        worksheet.write(q, 2, res[k][1])
+        worksheet.write(q, 3, res[k][2])
+        q += 1
+    #
+    workbook.close()
